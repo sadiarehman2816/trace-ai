@@ -1,0 +1,22 @@
+v0.8-core-stable
+
+TRACE-AI core engine — frozen stable release.
+
+What is frozen at this tag:
+  - Modular architecture (config / core / inputs / models / outputs / ui)
+  - Deterministic verification engine (retrieval, scoring, adversarial review,
+    contradiction, confidence, status) — AI never decides status
+  - Evidence hygiene (metadata stripping, chart/OCR-noise rejection,
+    fragment + broad-noun + definition handling)
+  - HYBRID trust boundary (LLM allowed only for theme synthesis)
+  - Full smoke test suite (tests/test_smoke.py)
+
+Known limitation (by design, not a bug):
+  - MOCK theme discovery is keyword-level (entities, not abstract research
+    concepts). Abstract themes require HYBRID/LIVE mode (LLM synthesis).
+
+Next work happens on branches, never on main:
+  - hybrid-themes      enable LLM theme synthesis (API key)
+  - reference-checker  citation / reference verification
+  - pdf-highlighter    further viewer improvements
+  - premium-features   gated capabilities

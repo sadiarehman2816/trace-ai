@@ -1,0 +1,67 @@
+# ============================================================
+# TRACE-AI — Production .gitignore
+# Ignores: cache, secrets, virtualenvs, uploads, and data files.
+# DOES NOT ignore source code (all .py modules are tracked).
+# ============================================================
+
+# --- Python cache / build artefacts ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Secrets / API keys (NEVER commit) ---
+.env
+.env.*
+*.key
+api_keys
+api_keys/
+*api_key*
+secrets.toml
+
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Streamlit local config / secrets ---
+.streamlit/
+.streamlit/secrets.toml
+
+# --- User uploads / runtime cache / scratch ---
+uploads/
+uploads
+cache/
+cache
+trace_ai_uploads/
+/tmp/
+tmp/
+*.findings.json
+
+# --- Document & data files (research inputs/outputs, not code) ---
+*.pdf
+*.docx
+*.doc
+*.csv
+*.tsv
+*.xlsx
+*.xls
+
+# --- OS / editor junk ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# ============================================================
+# IMPORTANT: source code is NOT ignored.
+# All .py files under config/ core/ inputs/ models/ outputs/
+# ui/ tests/ and app.py remain tracked.
+# Documentation (.md) and requirements.txt also remain tracked.
+# ============================================================
