@@ -3,6 +3,23 @@
 All notable changes to TRACE-AI. This project follows a "deterministic core,
 semantic features on branches" model.
 
+## v0.8.2 — Stability phase (evidence hygiene / robustness)
+
+### Fixed
+- **PDF newline-loss sentence gluing** (`core/chunking.py`): PDF text extraction
+  often drops the newline between a heading or chart-axis line and the following
+  sentence, gluing them into one span. This caused a valid finding glued to a
+  chart-axis run to be rejected as chart noise (HIGH severity — lost a real
+  finding), and ALL-CAPS headings to pollute evidence text (MEDIUM). Added
+  `_split_glued_boundaries()` to recover the sentence boundary. Smallest-possible
+  change; no other module, no confidence formula, no feature affected.
+
+### Tests
+- Added `tests/test_metadata.py::test_glued_header_is_split` and
+  `test_glued_chart_axis_is_split` regression tests.
+- Added `testing/test_log.md` documenting the stability test session
+  (per-document: what worked, what failed, severity, recommendation).
+
 ## v0.8 — Core stable (frozen)
 
 ### Architecture

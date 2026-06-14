@@ -53,15 +53,46 @@ def _looks_like_garbage(text: str) -> bool:
     return False
 
 
+def _split_glued_boundaries(text: str) -> str:
+    """
+    PDF text extraction often drops the newline between a heading / chart-axis
+    line and the body sentence, gluing them together (e.g.
+    "NHS WORKFORCE STATISTICS Staff vacancies rose." or
+    "0 10 20 30 owner occupied ... The number of first time buyers ...").
+
+    This inserts a sentence boundary ('. ') at those glue points so the splitter
+    can separate them. It is conservative: it only fires on clear ALL-CAPS-header
+    -> Capitalised-word, or chart-axis-number-run -> Capitalised-word patterns.
+    Bug fix only; does not change chunking architecture.
+    """
+    # 1) ALL-CAPS header (3+ caps words) immediately followed by a normal
+    #    Capitalised word that starts a sentence.
+    text = re.sub(
+        r'\b((?:[A-Z][A-Z&]+\s+){2,}[A-Z][A-Z&]+)\s+(?=[A-Z][a-z])',
+        r'\1. ', text)
+
+    # 2) A run of >=4 axis-style numbers, optionally followed by short labels,
+    #    then a Capitalised sentence start.
+    text = re.sub(
+        r'((?:\b\d{1,3}\b[ ]+){4,}(?:[a-z][a-z ]+?)?)(?=[A-Z][a-z])',
+        r'\1. ', text)
+
+    return text
+
+
 def split_into_sentences(text: str) -> list[str]:
     """
     Lightweight sentence splitter.
     Splits on '.', '!', '?' followed by whitespace + capital/number,
-    but avoids splitting on common abbreviations and decimals.
+    but avoids splitting on common abbreviations and decimals. Also separates
+    headings / chart-axis lines that PDF extraction glued to the next sentence.
     """
     text = text.strip()
     if not text:
         return []
+
+    # Separate glued heading / chart-axis boundaries first (PDF newline loss).
+    text = _split_glued_boundaries(text)
 
     # Protect common abbreviations / decimal numbers from being split points
     protected = re.sub(r'\b(e\.g|i\.e|etc|vs|Mr|Mrs|Dr|No|Fig|Ref)\.', r'\1<DOT>', text)

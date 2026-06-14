@@ -61,6 +61,26 @@ def test_normal_sentence_untouched():
     assert clean_evidence_text(s).startswith("Rents rose 8%")
 
 
+def test_glued_header_is_split():
+    """Stability fix: an ALL-CAPS heading glued to a finding (PDF newline loss)
+    is separated so the heading doesn't pollute the evidence span."""
+    from core.chunking import split_into_sentences
+    out = split_into_sentences("NHS WORKFORCE STATISTICS Staff vacancies rose. "
+                               "The vacancy rate reached 9.2%.")
+    # The heading must be its own span, not glued to the finding
+    assert any("Staff vacancies rose" in s and "STATISTICS" not in s for s in out)
+
+
+def test_glued_chart_axis_is_split():
+    """Stability fix: a chart-axis number run glued to a real finding is split,
+    so the finding survives instead of being rejected as chart noise."""
+    from core.chunking import split_into_sentences
+    out = split_into_sentences(
+        "0 10 20 30 40 50 owner occupied social rented "
+        "The number of first time buyers increased to 761,000.")
+    assert any("first time buyers increased" in s for s in out)
+
+
 ALL = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":
