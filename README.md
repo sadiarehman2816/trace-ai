@@ -120,8 +120,13 @@ trace_ai/
 ## Documentation
 
 - `architecture.md` — retrieval flow, verification layers, confidence system
+- `evidence_pipeline.md` — the full pipeline, step by step, from the code
+- `confidence_scoring.md` — the confidence formula and band → status mapping
+- `governance.md` — principles, the HYBRID trust boundary, change control
 - `roadmap.md` — version roadmap (v0.9 Hybrid Themes → v2.0 API)
 - `CHANGELOG.md` — version history
+- `CONTRIBUTING.md` — how to contribute without weakening trust
+- `CITATION.cff` — how to cite TRACE-AI
 - `GITHUB_SETUP.md` — repo setup and branching guide
 
 ## Tests
@@ -135,3 +140,14 @@ python3 -m tests.test_chart_noise     # chart / OCR noise rejection
 python3 -m tests.test_definition_filter  # definition detection + cap
 python3 -m tests.test_verification    # rule engine + HYBRID trust boundary
 ```
+
+## License
+
+Copyright © 2026 Sadia Rehman & Muhammad Amin ur Rehman Khan. Developed under
+the International Association for Social Research Dynamics (IASRD), UK.
+
+TRACE-AI is licensed under the **Apache License 2.0** — see the `LICENSE` and
+`NOTICE` files. You may use, modify, and distribute it (including commercially),
+provided you retain the copyright/license notices and state significant changes;
+the licence also includes an express patent grant. Intellectual property
+ownership is recorded in `LEGAL_PACK.md`.

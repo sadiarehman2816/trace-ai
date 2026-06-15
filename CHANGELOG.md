@@ -5,6 +5,15 @@ semantic features on branches" model.
 
 ## v0.8.2 — Stability phase (evidence hygiene / robustness)
 
+### Documentation
+- Completed the documentation set: added `evidence_pipeline.md`,
+  `confidence_scoring.md`, `governance.md`, `CONTRIBUTING.md`, `CITATION.cff`,
+  and a `LICENSE`. All content derived from the actual code.
+- Licence set to **Apache 2.0** (permissive, with patent grant); added `NOTICE`
+  (copyright + IASRD attribution), `AUTHORS.md`, and `LEGAL_PACK.md` (IP
+  ownership, governance, charity compliance, UK GDPR, and publication framework —
+  authors own the IP, IASRD partner only).
+
 ### Fixed
 - **PDF newline-loss sentence gluing** (`core/chunking.py`): PDF text extraction
   often drops the newline between a heading or chart-axis line and the following
