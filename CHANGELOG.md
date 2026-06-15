@@ -3,6 +3,44 @@
 All notable changes to TRACE-AI. This project follows a "deterministic core,
 semantic features on branches" model.
 
+# Changelog
+
+All notable changes to TRACE-AI. This project follows a "deterministic core,
+semantic features on branches" model.
+
+## v1.0-beta (candidate) — Validation phase
+
+### Fixed
+- **Section-header gluing** (`core/chunking.py`): a standard section header
+  (Abstract, Results, Discussion, Conclusion, etc.) glued to the following
+  sentence by PDF newline loss is now separated. Restricted to an explicit
+  header whitelist so normal prose beginning with such a word is never
+  over-split. This was the recurring part of the header-gluing issue seen across
+  validation documents.
+- **Footnote-marker leak** (`core/quality_filter.py`): bracketed numeric
+  citation markers (`[1]`, `[12]`) were not stripped and could appear in
+  evidence text. Added a targeted rule to remove them. HIGH severity; smallest
+  possible change.
+- **Contradiction false negative** (`core/contradiction.py`): the polarity
+  lexicon omitted the past tense "rose" (and several other common directional
+  verbs), so a "rose vs fell" pair on the same metric was reported as PARTIALLY
+  SUPPORTED instead of CONFLICTING EVIDENCE. Extended the lexicon (rose, climbed,
+  soared, jumped, surged, doubled / dipped, slipped, plunged, sank, halved).
+  Detector logic unchanged. HIGH severity.
+
+### Tests
+- Added `test_footnote_markers_stripped`,
+  `test_contradiction_detects_rose_vs_fell`, and
+  `test_glued_section_header_is_split` regression tests.
+- Extended `testing/test_log.md` with validation sessions and a v1.0-beta
+  readiness assessment.
+
+### Known limitation
+- Mixed-case *title* lines and chart *label rows* (non-standard-header text) can
+  still prepend to the first sentence of a span. ALL-CAPS headings, chart-axis
+  number runs, and standard section headers are all handled. This residual case
+  is cosmetic, does not create false findings, and is documented in the test log.
+
 ## v0.8.2 — Stability phase (evidence hygiene / robustness)
 
 ### Documentation

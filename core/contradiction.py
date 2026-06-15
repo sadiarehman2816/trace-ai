@@ -13,16 +13,18 @@ import re
 # Explainable polarity lexicon. Kept deliberately simple and auditable.
 POSITIVE_TERMS = {
     "increase", "increased", "increases", "increasing", "rise", "rises", "rising",
-    "grew", "grow", "growth", "growing", "improved", "improve", "improvement",
+    "rose", "grew", "grow", "growth", "growing", "improved", "improve", "improvement",
     "higher", "more", "expand", "expanded", "up", "gain", "gained", "exceed",
-    "exceeds", "exceeded",
+    "exceeds", "exceeded", "climbed", "climb", "soared", "soar", "jumped", "jump",
+    "surged", "surge", "doubled",
 }
 NEGATIVE_TERMS = {
     "decrease", "decreased", "decreases", "decreasing", "fall", "falls", "fell",
     "falling", "decline", "declined", "declining", "reduced", "reduce", "reduction",
     "lower", "less", "fewer", "shrank", "shrink", "down", "drop", "dropped",
     "worsened", "worsen", "deteriorate", "stable", "stabilise", "stabilize",
-    "unchanged",
+    "unchanged", "dipped", "dip", "slipped", "slip", "plunged", "plunge",
+    "sank", "sink", "halved",
 }
 
 

@@ -48,6 +48,17 @@ def test_letter_only_reference_detected():
     assert contains_metadata_reference("Rents rose 8% over the year.") is False
 
 
+def test_footnote_markers_stripped():
+    """QA Bug 1: bracketed footnote/citation markers ([1], [12]) are removed
+    from evidence, while real content and non-footnote numbers survive."""
+    assert "[1]" not in clean_evidence_text(
+        "Accepted 79,840 households in 2024, an increase of 6% [1].")
+    assert "[12]" not in clean_evidence_text("The rate rose to 8% [12] over the year.")
+    # A genuine sentence with no footnote is unchanged in substance
+    assert clean_evidence_text(
+        "The figure was between 10 and 20 percent.").startswith("The figure was")
+
+
 def test_hard_truncate_helper():
     """truncate_at_metadata_marker cuts when >=4 words precede the marker."""
     out = truncate_at_metadata_marker(
@@ -79,6 +90,18 @@ def test_glued_chart_axis_is_split():
         "0 10 20 30 40 50 owner occupied social rented "
         "The number of first time buyers increased to 761,000.")
     assert any("first time buyers increased" in s for s in out)
+
+
+def test_glued_section_header_is_split():
+    """Validation fix: a standard section header (Abstract/Results/etc.) glued to
+    the following sentence is separated, without over-splitting normal prose that
+    merely begins with such a word."""
+    from core.chunking import split_into_sentences
+    out = split_into_sentences("Results Private renters scored 2.3 points lower.")
+    assert any("Private renters scored" in s and "Results" not in s for s in out)
+    # Must NOT over-split a normal sentence that starts with a header-like word
+    assert len(split_into_sentences("Results from the survey were consistent.")) == 1
+    assert len(split_into_sentences("Discussion of the findings continues here.")) == 1
 
 
 ALL = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

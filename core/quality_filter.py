@@ -198,6 +198,10 @@ def strip_metadata_references(text: str) -> str:
     cleaned = re.sub(r"[,;.]?\s*(?:source|notes?|bases?)\s*:\s*.*$", ".", cleaned,
                      flags=re.IGNORECASE)
 
+    # 0b) Remove bracketed numeric footnote / citation markers: "[1]", "[12]".
+    #     These are reference pointers, not content (QA: govstats.pdf "[1]" leak).
+    cleaned = re.sub(r"\s*\[\s*\d{1,3}\s*\]", "", cleaned)
+
     # 1) Remove whole parentheticals that are just a reference: "(see Table 4.2)"
     cleaned = re.sub(r"\(\s*" + ref + r"\s*\)", "", cleaned, flags=re.IGNORECASE)
 

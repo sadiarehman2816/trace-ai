@@ -77,6 +77,18 @@ def _split_glued_boundaries(text: str) -> str:
         r'((?:\b\d{1,3}\b[ ]+){4,}(?:[a-z][a-z ]+?)?)(?=[A-Z][a-z])',
         r'\1. ', text)
 
+    # 3) A known section-header word glued to the following body sentence (PDF
+    #    newline loss), either at the start of the text or right after a sentence
+    #    end. Limited to an explicit whitelist of standard report/paper headers so
+    #    normal prose is never over-split. Handles the recurring
+    #    "Results Private renters..." / "Abstract This study..." case.
+    text = re.sub(
+        r'(^|(?<=[.!?])\s)'
+        r'(Abstract|Introduction|Background|Methods?|Methodology|Results?|'
+        r'Findings|Discussion|Conclusions?|Summary|References|Acknowledgements?|'
+        r'Overview|Executive Summary)\s+(?=[A-Z][a-z])',
+        r'\1\2. ', text)
+
     return text
 
 

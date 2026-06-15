@@ -70,6 +70,18 @@ def test_hybrid_boundary_no_llm_in_verification():
     adversarial_review("housing", "Waiting lists rose 12 percent", client=TrapClient())
 
 
+def test_contradiction_detects_rose_vs_fell():
+    """QA Bug 3: 'rose' (past tense) must register as a positive direction so a
+    'rose vs fell' pair is flagged as contradictory, not silently averaged."""
+    from core.contradiction import polarity, detect_contradiction
+    assert polarity("the unemployment rate rose to 5.8% in Q3") == "positive"
+    assert polarity("the unemployment rate fell to 4.9% by year end") == "negative"
+    assert detect_contradiction([
+        {"text": "the rate rose to 5.8% in Q3"},
+        {"text": "the rate fell to 4.9% by year end"},
+    ]) is True
+
+
 ALL = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 if __name__ == "__main__":
