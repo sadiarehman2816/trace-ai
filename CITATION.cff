@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use TRACE-AI in your work, please cite it as below."
-title: "TRACE-AI: Trustworthy Research Analysis and Citation Engine"
+title: "TRACE-AI: Traceable Research Analysis and Citation Engine"
 abstract: >-
   TRACE-AI is an evidence-gated research-integrity platform. It analyses
   documents against themes and returns only findings traceable to verified
@@ -16,7 +16,7 @@ authors:
   - family-names: Khan
     given-names: "Muhammad Amin ur Rehman"
     affiliation: "International Association for Social Research Dynamics (IASRD)"
-version: "0.8.2"
+version: "1.0-beta"
 date-released: "2026-06-14"
 license: "Apache-2.0"
 repository-code: "https://github.com/sadiarehman2816/trace-ai"
