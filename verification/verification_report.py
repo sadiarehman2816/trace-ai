@@ -1,7 +1,7 @@
 """verification/verification_report.py — Stage 6.
 
 Quality scores (reference 50% + citation 30% + evidence 20%), recommendations
-(fabrication flagged URGENT first), full JSON export, and a self-contained
+(unverified references flagged first, in neutral language), full JSON export, and a self-contained
 HTML report (print-to-PDF friendly).
 """
 
@@ -23,17 +23,17 @@ from .models import (
 _VERDICT_POINTS = {
     "verified": 1.0,
     "likely_verified": 0.8,
-    "unverified": 0.5,
-    "suspect": 0.3,
-    "fabricated": 0.0,
+    "not_checked": 0.5,             # neutral — verification incomplete, not a negative signal
+    "ambiguous_match": 0.4,
+    "not_externally_verified": 0.2, # absence in indexes (NOT "fake") — mild signal only
 }
 
 _VERDICT_COLORS = {
     "verified": "#1a7f37",
     "likely_verified": "#4c9a2a",
-    "suspect": "#b58900",
-    "unverified": "#6a737d",
-    "fabricated": "#cb2431",
+    "ambiguous_match": "#b58900",
+    "not_externally_verified": "#c0562b",   # amber-red, NOT alarm red — absence ≠ fake
+    "not_checked": "#6a737d",
 }
 
 
@@ -74,18 +74,20 @@ def build_report(
         0.5 * report.reference_quality + 0.3 * report.citation_quality + 0.2 * report.evidence_quality, 1
     )
 
-    # Recommendations — fabrication URGENT first
-    fabricated = [r for r in references if r.verdict == "fabricated"]
-    if fabricated:
-        nums = ", ".join(f"#{r.reference.index}" for r in fabricated)
+    # Recommendations — unverified references flagged first (neutral language)
+    unverified_ext = [r for r in references if r.verdict == "not_externally_verified"]
+    if unverified_ext:
+        nums = ", ".join(f"#{r.reference.index}" for r in unverified_ext)
         report.recommendations.append(
-            f"URGENT: {len(fabricated)} reference(s) could not be found in any of six scholarly sources "
-            f"({nums}) — verify manually; likely fabricated."
+            f"{len(unverified_ext)} reference(s) had no matching record in the external sources searched "
+            f"({nums}). Absence from these indexes is not by itself a problem — verify manually "
+            f"(books and grey literature are often unindexed)."
         )
-    suspects = [r for r in references if r.verdict == "suspect"]
-    if suspects:
+    ambiguous = [r for r in references if r.verdict == "ambiguous_match"]
+    if ambiguous:
         report.recommendations.append(
-            f"{len(suspects)} reference(s) had only weak external matches — manual check recommended."
+            f"{len(ambiguous)} reference(s) had a possible external match with insufficient "
+            f"confidence — manual review recommended."
         )
     doi_broken = [r for r in references if "doi_does_not_resolve" in r.issues or "doi_mismatch" in r.issues]
     if doi_broken:
@@ -136,11 +138,18 @@ def to_html(report: VerificationReport, document_name: str = "document") -> str:
                 f"<i>{_esc(rec.journal)}</i> · via {_esc(rec.source)}"
                 f"{' · strategy: ' + _esc(m.strategy) if m.strategy else ''}"
             )
+        prov = vr.provenance
+        prov_html = (
+            f"<b>Source:</b> {_esc(prov['source'])}<br>"
+            f"<b>External:</b> {_esc(prov['external_verification'])}<br>"
+            f"<b>Relationship:</b> {_esc(prov['relationship'])}"
+        )
         rows.append(f"""
         <tr>
           <td>{ref.index}</td>
           <td class="raw">{_esc(ref.raw_text[:400])}</td>
           <td>{matched_html}</td>
+          <td>{prov_html}</td>
           <td style="color:{color};font-weight:600">{_esc(vr.verdict.replace('_', ' '))}<br>
               <span class="conf">{vr.confidence:.2f}</span></td>
           <td>{doi_html}</td>
@@ -209,11 +218,13 @@ def to_html(report: VerificationReport, document_name: str = "document") -> str:
 {report.stats.intext_citation_count} in-text citations</p>
 <h2>Reference verification</h2>
 <table><thead><tr><th>#</th><th>Extracted reference</th><th>Matched external record</th>
-<th>Verdict</th><th>DOI</th><th>Issues</th><th>Recommendation</th></tr></thead>
+<th>Provenance</th><th>Verdict</th><th>DOI</th><th>Issues</th><th>Recommendation</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
 <h2>In-text ↔ bibliography consistency</h2>
 {cons_html}
 {claims_html}
 <p style="color:#6a737d;font-size:.8rem">Verdicts are produced by TRACE-AI's deterministic rule engine.
-'Fabricated' means no matching record was found in six scholarly sources — final judgement rests with a human reviewer.</p>
+'Not externally verified' means no acceptable record was found in the sources searched — it is NOT a claim that the
+reference is fabricated. External records are shown for comparison only and are never added to the bibliography.
+Final judgement rests with a human reviewer.</p>
 </body></html>"""

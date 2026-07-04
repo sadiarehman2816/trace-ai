@@ -35,6 +35,30 @@ def _base_year(year_str: str) -> str:
     return re.sub(r"[a-z]$", "", year_str.strip())
 
 
+# Words that carry no distinguishing power in an organisational name.
+_ORG_STOPWORDS = frozenset(
+    "the of for and a an department ministry office bureau agency commission "
+    "committee council institute institution association society organization "
+    "organisation national international federal state government".split()
+)
+
+
+def _is_org_author(author: str) -> bool:
+    """A personal author looks like 'Surname, F.' / 'Surname, First'. Anything
+    else with multiple capitalised words and no leading 'Surname,' is treated
+    as organisational (e.g. 'Department for Work and Pensions')."""
+    a = author.strip()
+    if re.match(r"^[A-ZÀ-Ö][\w'’\-]+,\s*[A-Z]", a):     # "Surname, F." / "Surname, First"
+        return False
+    # Multi-word capitalised phrase → organisational.
+    return len(a.split()) >= 2
+
+
+def _significant_tokens(norm_name: str) -> set[str]:
+    """Distinctive lowercase tokens of an organisation name (stopwords dropped)."""
+    return {t for t in norm_name.split() if t and t not in _ORG_STOPWORDS}
+
+
 def check_consistency(
     refs: list[NormalizedReference],
     intext: list[dict],
@@ -42,10 +66,20 @@ def check_consistency(
     report = ConsistencyReport()
 
     # Index references by FIRST-author surname -> set of (base) years present.
+    # Organisational authors (e.g. "Department for Work and Pensions") have no
+    # surname, so index them separately by their full normalised name and by
+    # their significant tokens, and match in-text citations by token overlap.
     ref_surnames_years: dict[str, set[str]] = {}
+    org_refs: list[tuple[str, set[str], object]] = []   # (norm_name, tokens, ref)
     for ref in refs:
-        if ref.authors and ref.year:
-            s = _surname(ref.authors[0])
+        if not (ref.authors and ref.year):
+            continue
+        first = ref.authors[0]
+        if _is_org_author(first):
+            name = _norm(first)
+            org_refs.append((name, _significant_tokens(name), ref))
+        else:
+            s = _surname(first)
             if s:
                 ref_surnames_years.setdefault(s, set()).add(str(ref.year))
 
@@ -67,22 +101,46 @@ def check_consistency(
         if not lead:
             continue
 
-        if lead not in ref_surnames_years:
-            report.cited_not_listed.append(f"{cite.get('author', lead)} ({cite.get('year')})")
+        # Personal-author match first.
+        if lead in ref_surnames_years:
+            years = ref_surnames_years[lead]
+            if year and year not in years:
+                report.year_mismatches.append(
+                    f"{cite.get('author', lead)} cited for {cite.get('year')} "
+                    f"but bibliography only has {', '.join(sorted(years))}"
+                )
+            for ref in refs:
+                if ref.authors and not _is_org_author(ref.authors[0]) \
+                        and _surname(ref.authors[0]) == lead and (not year or str(ref.year) == year):
+                    cited_ref_indices.add(ref.index)
             continue
 
-        years = ref_surnames_years[lead]
-        if year and year not in years:
-            report.year_mismatches.append(
-                f"{cite.get('author', lead)} cited for {cite.get('year')} "
-                f"but bibliography only has {', '.join(sorted(years))}"
-            )
-        # Mark matching refs as cited (first-author surname + year).
-        for ref in refs:
-            if ref.authors and _surname(ref.authors[0]) == lead and (
-                not year or str(ref.year) == year
-            ):
-                cited_ref_indices.add(ref.index)
+        # Organisational-author match: the citation phrase (possibly truncated,
+        # e.g. "Work and Pensions" for "Department for Work and Pensions") shares
+        # its significant tokens with, or is a substring of, an org reference.
+        cite_phrase = _norm(cite.get("author") or lead)
+        cite_tokens = _significant_tokens(cite_phrase)
+        matching_org_refs = []
+        for name, tokens, ref in org_refs:
+            if not cite_tokens:
+                break
+            overlap = cite_tokens & tokens
+            if (cite_phrase and cite_phrase in name) or (len(overlap) >= 2 and overlap == cite_tokens):
+                matching_org_refs.append(ref)
+
+        if matching_org_refs:
+            org_years = {str(r.year) for r in matching_org_refs}
+            if year and year not in org_years:
+                report.year_mismatches.append(
+                    f"{cite.get('author', lead)} cited for {cite.get('year')} "
+                    f"but bibliography only has {', '.join(sorted(org_years))}"
+                )
+            for ref in matching_org_refs:
+                if not year or str(ref.year) == year:
+                    cited_ref_indices.add(ref.index)
+            continue
+
+        report.cited_not_listed.append(f"{cite.get('author', lead)} ({cite.get('year')})")
 
     # Numbered style handling
     numbered_refs = {r.ref_number: r for r in refs if r.ref_number is not None}
@@ -103,11 +161,12 @@ def check_consistency(
         report.numbering_gaps.sort()
         report.numbering_overshoots.sort()
 
-    # Listed but never cited
+    # Listed but never cited. Report the number the user sees in the
+    # bibliography (ref_number for numbered styles, else positional index).
     if intext:                                   # only meaningful if we found in-text citations at all
         for ref in refs:
             if ref.index not in cited_ref_indices:
-                report.listed_not_cited.append(ref.index)
+                report.listed_not_cited.append(ref.ref_number or ref.index)
 
     # Duplicates by fuzzy title
     titled = [(r.index, _norm(r.title)) for r in refs if r.title]

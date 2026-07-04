@@ -198,16 +198,41 @@ if is_enabled("citation_checker") and st.session_state.get("result"):
     opt_claims = opt_col2.checkbox("Claim spot-checks (experimental, conservative)",
                                    value=is_enabled("claim_verification"))
 
+    # If the uploaded file set changed since the last verification, drop the
+    # stale report so the previous document's references don't linger.
+    _sig = tuple(sorted(uf.name for uf in (uploaded or [])))
+    if st.session_state.get("_verif_sig") != _sig:
+        st.session_state.pop("verification_report", None)
+        st.session_state["_verif_sig"] = _sig
+
     if st.button("Run External Verification"):
         import fitz
-        src_map = st.session_state["result"].get("pdf_path_map", {})
         full_text, page_count = "", 0
-        for tag, path in (src_map.items() if isinstance(src_map, dict) else []):
-            if path and path.endswith(".pdf"):
-                with fitz.open(path) as doc:
+
+        # Read the CURRENTLY uploaded files directly — never the cached
+        # pdf_path_map from the theme analysis (that path can be stale and
+        # would make every new upload show the previous document's references).
+        current_files = uploaded or []
+        used_current = False
+        for uf in current_files:
+            if uf.name.lower().endswith(".pdf"):
+                used_current = True
+                data = uf.getvalue()
+                with fitz.open(stream=data, filetype="pdf") as doc:
                     page_count += doc.page_count
                     for page in doc:
                         full_text += page.get_text() + "\n\n"
+
+        # Fallback: if the uploader is empty this run (e.g. only the theme
+        # analysis was run earlier), use its freshly-saved paths.
+        if not used_current:
+            src_map = st.session_state.get("result", {}).get("pdf_path_map", {})
+            for tag, path in (src_map.items() if isinstance(src_map, dict) else []):
+                if path and path.endswith(".pdf"):
+                    with fitz.open(path) as doc:
+                        page_count += doc.page_count
+                        for page in doc:
+                            full_text += page.get_text() + "\n\n"
         if not full_text:
             st.warning("Could not extract text for reference verification.")
         else:
@@ -236,25 +261,36 @@ if is_enabled("citation_checker") and st.session_state.get("result"):
         for rec in report.recommendations:
             (st.error if rec.startswith("URGENT") else st.info)(rec)
 
-        _ICON = {"verified": "✅", "likely_verified": "🟢", "suspect": "🟠",
-                 "unverified": "⚪", "fabricated": "🔴"}
+        _ICON = {"verified": "✅", "likely_verified": "🟢", "ambiguous_match": "🟠",
+                 "not_externally_verified": "🟤", "not_checked": "⚪"}
+        _LABEL = {"verified": "verified", "likely_verified": "likely verified",
+                  "ambiguous_match": "ambiguous match",
+                  "not_externally_verified": "not externally verified",
+                  "not_checked": "not checked"}
         st.markdown("#### References")
+        st.caption("Every reference below was extracted from the uploaded document. "
+                   "External records are shown for comparison only — they are never added to your bibliography.")
         for vr in report.references:
             ref = vr.reference
             icon = _ICON.get(vr.verdict, "⚪")
+            label = _LABEL.get(vr.verdict, vr.verdict.replace('_', ' '))
             with st.expander(f"{icon} {ref.index}. {ref.raw_text[:90]}…  "
-                             f"[{vr.verdict.replace('_', ' ')} · {vr.confidence:.2f}]"):
+                             f"[{label} · {vr.confidence:.2f}]"):
+                prov = vr.provenance
+                st.markdown(
+                    f"**Source of reference:** {prov['source']}  \n"
+                    f"**External verification:** {prov['external_verification']}  \n"
+                    f"**Relationship:** {prov['relationship']}"
+                )
                 if vr.match.record:
                     rec = vr.match.record
-                    st.write(f"**Matched:** {rec.title}")
+                    st.write(f"**External record (for comparison):** {rec.title}")
                     st.write(f"{', '.join(rec.authors[:4])}"
                              f"{' et al.' if len(rec.authors) > 4 else ''} ({rec.year}) — *{rec.journal or '—'}*")
-                    st.write(f"Source: `{rec.source}` · strategy: `{vr.match.strategy}` "
+                    st.write(f"via `{rec.source}` · strategy: `{vr.match.strategy}` "
                              f"· score {vr.match.score:.2f}")
                     if rec.doi:
                         st.write(f"DOI: [{rec.doi}](https://doi.org/{rec.doi})")
-                else:
-                    st.write("No external record accepted.")
                 st.write(f"Providers tried: {', '.join(dict.fromkeys(vr.providers_tried)) or '—'}")
                 if vr.issues:
                     st.warning("Issues: " + ", ".join(vr.issues))

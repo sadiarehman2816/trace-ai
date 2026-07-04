@@ -201,6 +201,15 @@ def detect_issues(ref: NormalizedReference, vr: VerifiedReference) -> list[str]:
 
 
 def decide_verdict(vr: VerifiedReference, providers_reachable: bool) -> tuple[str, float]:
+    """Verdicts (research-integrity safe terminology):
+      verified               — strong external match
+      likely_verified        — high-confidence match, minor differences
+      ambiguous_match        — a match exists but confidence is insufficient,
+                               or several plausible matches exist
+      not_externally_verified— no acceptable record found in the searched
+                               sources (NOT a claim the reference is fake)
+      not_checked            — skipped, providers unavailable, or timed out
+    """
     m = vr.match
     score = m.score if m.record else 0.0
 
@@ -209,15 +218,15 @@ def decide_verdict(vr: VerifiedReference, providers_reachable: bool) -> tuple[st
     if m.matched and score >= LIKELY_THRESHOLD:
         return "likely_verified", score
     if score >= SUSPECT_THRESHOLD:
-        return "suspect", score
+        return "ambiguous_match", score
 
     if not providers_reachable:
-        return "unverified", score
-    # Searched everywhere, nothing close came back.
+        return "not_checked", score
+    # Grey literature / books routinely absent from scholarly indexes — do not
+    # escalate their absence.
     if vr.reference.type_guess in ("web", "report") and not vr.reference.doi:
-        # Grey literature routinely absent from scholarly indexes.
-        return "unverified", score
-    return "fabricated", score
+        return "not_checked", score
+    return "not_externally_verified", score
 
 
 def recommendation_for(vr: VerifiedReference) -> str:
@@ -226,11 +235,16 @@ def recommendation_for(vr: VerifiedReference) -> str:
         return "No action needed."
     if v == "likely_verified":
         return "Match found with minor differences — confirm the flagged fields."
-    if v == "suspect":
-        return "Weak external match — manually verify this reference before publication."
-    if v == "fabricated":
-        return "URGENT: no external record found in six scholarly sources — likely fabricated. Verify manually and replace or remove."
-    return "Could not be verified automatically (source type or provider availability) — check manually."
+    if v == "ambiguous_match":
+        return ("A possible external match was found, but the metadata does not match "
+                "with sufficient confidence. Manual review recommended.")
+    if v == "not_externally_verified":
+        return ("No acceptable external record was found in the searched sources. "
+                "Manual verification is recommended. Many books and grey-literature "
+                "items are simply not indexed, so absence here does not by itself "
+                "indicate a problem with the reference.")
+    return ("Verification was not completed for this reference (source type, provider "
+            "availability, or timeout). Check manually.")
 
 
 # ---------------------------------------------------------------------------

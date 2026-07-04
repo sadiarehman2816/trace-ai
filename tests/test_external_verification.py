@@ -366,4 +366,29 @@ check("Body-only mention is still seen as an in-text citation",
       str([c.get("lead") for c in p_intext]))
 
 print(f"\n{PASS} passed, {FAIL} failed")
+
+# ---------------------------------------------------------------------------
+# 9. Organisational authors (Department for Work and Pensions)
+# ---------------------------------------------------------------------------
+
+print("== Organisational authors ==")
+ORG_DOC = (
+    "Policy (Department for Work and Pensions, 2023) was criticised. "
+    "Department for Work and Pensions (2025) reported gains. Parton (2020) argued.\n\n"
+    "References\n\n"
+    "Department for Work and Pensions. (2023). Welfare reform report. London: DWP.\n"
+    "Department for Work and Pensions. (2025). Annual statistics. London: DWP.\n"
+    "Parton, N. (2020). Child protection. Journal of Social Work, 5(2), 10-20.\n"
+)
+org_raw, org_intext, _ = reference_extractor.extract(ORG_DOC)
+org_cons = citation_matcher.check_consistency(
+    reference_normalizer.normalize_all(org_raw), org_intext)
+check("Org author (truncated 'Work and Pensions') NOT falsely cited-not-listed",
+      not any("Work and Pensions" in x for x in org_cons.cited_not_listed), str(org_cons.cited_not_listed))
+check("Org author refs NOT falsely listed-not-cited",
+      len(org_cons.listed_not_cited) == 0, str(org_cons.listed_not_cited))
+check("Org author with two years produces no false year-mismatch",
+      len(org_cons.year_mismatches) == 0, str(org_cons.year_mismatches))
+
+print(f"\n{PASS} passed, {FAIL} failed")
 sys.exit(1 if FAIL else 0)

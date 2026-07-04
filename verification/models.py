@@ -60,13 +60,36 @@ class VerifiedReference:
     """Stage 3 output — one reference, fully judged."""
     reference: NormalizedReference
     match: MatchResult = field(default_factory=MatchResult)
-    verdict: str = "unverified"                # verified | likely_verified | suspect | fabricated | unverified
+    verdict: str = "not_checked"               # verified | likely_verified | ambiguous_match | not_externally_verified | not_checked
     confidence: float = 0.0
     issues: list[str] = field(default_factory=list)
     providers_tried: list[str] = field(default_factory=list)
     recommendation: Optional[str] = None
     doi_resolves: Optional[bool] = None        # None = not checked / inconclusive
     url_alive: Optional[bool] = None
+
+    @property
+    def provenance(self) -> dict:
+        """Three clearly-separated planes so an external record is never
+        confused with the user's own bibliography entry:
+          source        — where the reference itself came from (always the doc)
+          external      — whether an external record was accepted
+          relationship  — how the external record relates (match / none)
+        """
+        if self.match.matched and self.match.record:
+            external = f"{self.match.record.source} record accepted"
+            relationship = "external metadata match"
+        elif self.match.record:
+            external = f"possible {self.match.record.source} record (low confidence)"
+            relationship = "related literature only — not an accepted match"
+        else:
+            external = "no acceptable external record found"
+            relationship = "no external match"
+        return {
+            "source": "extracted from uploaded document",
+            "external_verification": external,
+            "relationship": relationship,
+        }
 
 
 @dataclass
