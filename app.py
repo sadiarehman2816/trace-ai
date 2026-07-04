@@ -28,7 +28,7 @@ st.set_page_config(page_title="TRACE-AI", page_icon="🔍", layout="wide")
 
 st.title("🔍 TRACE-AI")
 st.caption("Evidence-Based Research Intelligence  ·  **Golden Rule: No Evidence = No Claim**  ·  "
-           "build v0.8-core-stable · metadata-clean + chart/definition filters ACTIVE")
+           "TRACE-AI Community · build v1.0-beta · metadata-clean + chart/definition filters ACTIVE")
 
 mode = ("HYBRID — LLM theme synthesis + deterministic verification"
         if os.environ.get("ANTHROPIC_API_KEY")
@@ -85,7 +85,7 @@ analyse = st.button("Analyse", type="primary", disabled=not can_run)
 def run(uploaded_files, url_list, manual_theme_list, auto):
     """Run the full analysis for uploaded files/URLs and return the result dict for the UI."""
     tmp_paths, pdf_path_map = [], {}
-    session_dir = os.path.join(tempfile.gettempdir(), "trace_ai_uploads")
+    session_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads_storage")
     os.makedirs(session_dir, exist_ok=True)
     for uf in uploaded_files or []:
         nice_path = os.path.join(session_dir, uf.name)
@@ -156,6 +156,7 @@ if "result" in st.session_state:
         st.write("No supported findings.")
 
     st.subheader("4 · Blocked & Insufficient")
+    st.info("ℹ️ These themes were automatically detected but could not be verified — either the document does not contain sufficient evidence for them, or they may be metadata (e.g. journal names, copyright text) rather than research topics. No action needed.")
     blocked = [f for f in findings if f["status"] in ("BLOCKED", "INSUFFICIENT EVIDENCE")]
     if blocked:
         for f in blocked:
@@ -165,7 +166,7 @@ if "result" in st.session_state:
 
     st.divider()
     st.subheader("Export")
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     if is_enabled("export_json"):
         c1.download_button("Export JSON", to_json(result),
                            file_name="trace_ai_findings.json", mime="application/json")
@@ -173,7 +174,124 @@ if "result" in st.session_state:
         c2.download_button("Export Excel", to_xlsx(findings),
                            file_name="trace_ai_findings.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    if is_enabled("export_pdf"):
+        from outputs.pdf_export import to_pdf
+        c4.download_button("Export PDF (Full)", to_pdf(findings, result["source_document"], public_mode=False),
+                          file_name="trace_ai_report_full.pdf", mime="application/pdf")
+        c4.download_button("Export PDF (Public)", to_pdf(findings, result["source_document"], public_mode=True), file_name="trace_ai_report_public.pdf", mime="application/pdf")
     if is_enabled("export_docx"):
         c3.download_button("Export Word", to_docx(findings, result["source_document"]),
                            file_name="trace_ai_findings.docx",
                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+# Citation Checker — external verification pipeline v2.0
+if is_enabled("citation_checker") and st.session_state.get("result"):
+    st.divider()
+    st.subheader("5 · External Reference Verification")
+    st.caption("Every reference is checked independently against Crossref, OpenAlex, "
+               "Semantic Scholar, PubMed, arXiv and doi.org. The document is input only.")
+
+    opt_col1, opt_col2 = st.columns(2)
+    opt_urls = opt_col1.checkbox("Check plain URLs (HEAD requests — adds latency)",
+                                 value=is_enabled("verify_urls"))
+    opt_claims = opt_col2.checkbox("Claim spot-checks (experimental, conservative)",
+                                   value=is_enabled("claim_verification"))
+
+    if st.button("Run External Verification"):
+        import fitz
+        src_map = st.session_state["result"].get("pdf_path_map", {})
+        full_text, page_count = "", 0
+        for tag, path in (src_map.items() if isinstance(src_map, dict) else []):
+            if path and path.endswith(".pdf"):
+                with fitz.open(path) as doc:
+                    page_count += doc.page_count
+                    for page in doc:
+                        full_text += page.get_text() + "\n\n"
+        if not full_text:
+            st.warning("Could not extract text for reference verification.")
+        else:
+            from verification import verify_document, to_json, to_html
+            prog = st.progress(0.0, text="Verifying references against external sources…")
+
+            def _update(done, total):
+                prog.progress(done / max(total, 1),
+                              text=f"Verifying references… {done}/{total}")
+
+            report = verify_document(full_text, pages=page_count,
+                                     check_urls=opt_urls, check_claims=opt_claims,
+                                     progress=_update)
+            prog.empty()
+            st.session_state["verification_report"] = report
+
+    report = st.session_state.get("verification_report")
+    if report:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Overall quality", f"{report.overall_quality}")
+        m2.metric("References (50%)", f"{report.reference_quality}")
+        m3.metric("Citations (30%)", f"{report.citation_quality}")
+        m4.metric("Evidence (20%)", f"{report.evidence_quality}")
+
+        st.markdown("#### Recommendations")
+        for rec in report.recommendations:
+            (st.error if rec.startswith("URGENT") else st.info)(rec)
+
+        _ICON = {"verified": "✅", "likely_verified": "🟢", "suspect": "🟠",
+                 "unverified": "⚪", "fabricated": "🔴"}
+        st.markdown("#### References")
+        for vr in report.references:
+            ref = vr.reference
+            icon = _ICON.get(vr.verdict, "⚪")
+            with st.expander(f"{icon} {ref.index}. {ref.raw_text[:90]}…  "
+                             f"[{vr.verdict.replace('_', ' ')} · {vr.confidence:.2f}]"):
+                if vr.match.record:
+                    rec = vr.match.record
+                    st.write(f"**Matched:** {rec.title}")
+                    st.write(f"{', '.join(rec.authors[:4])}"
+                             f"{' et al.' if len(rec.authors) > 4 else ''} ({rec.year}) — *{rec.journal or '—'}*")
+                    st.write(f"Source: `{rec.source}` · strategy: `{vr.match.strategy}` "
+                             f"· score {vr.match.score:.2f}")
+                    if rec.doi:
+                        st.write(f"DOI: [{rec.doi}](https://doi.org/{rec.doi})")
+                else:
+                    st.write("No external record accepted.")
+                st.write(f"Providers tried: {', '.join(dict.fromkeys(vr.providers_tried)) or '—'}")
+                if vr.issues:
+                    st.warning("Issues: " + ", ".join(vr.issues))
+                st.write(f"**Recommendation:** {vr.recommendation}")
+
+        cons = report.consistency
+        st.markdown("#### In-text ↔ bibliography consistency")
+        cons_lines = []
+        if cons.cited_not_listed:
+            cons_lines.append(f"Cited but not listed: {', '.join(cons.cited_not_listed)}")
+        if cons.listed_not_cited:
+            cons_lines.append(f"Listed but never cited (ref #): {cons.listed_not_cited}")
+        if cons.duplicates:
+            cons_lines.append(f"Duplicate groups: {cons.duplicates}")
+        if cons.numbering_gaps:
+            cons_lines.append(f"Numbering gaps: {cons.numbering_gaps}")
+        if cons.numbering_overshoots:
+            cons_lines.append(f"Numbering overshoots: {cons.numbering_overshoots}")
+        if cons.year_mismatches:
+            cons_lines.append(f"Year mismatches: {'; '.join(cons.year_mismatches)}")
+        if cons.formatting_issues:
+            cons_lines.append("; ".join(cons.formatting_issues))
+        if cons_lines:
+            for line in cons_lines:
+                st.warning(line)
+        else:
+            st.success("No consistency issues detected.")
+
+        if report.claims:
+            st.markdown("#### Claim spot-checks")
+            st.caption("Metadata search proves relevant literature exists, not that it agrees — human decides.")
+            for c in report.claims:
+                st.write(f"- *{c.sentence[:200]}…* → **{c.verdict}**")
+
+        d1, d2 = st.columns(2)
+        d1.download_button("Download JSON report", to_json(report),
+                           file_name="trace_ai_verification.json", mime="application/json")
+        d2.download_button("Download HTML report (print-to-PDF)",
+                           to_html(report, "uploaded document"),
+                           file_name="trace_ai_verification.html", mime="text/html")

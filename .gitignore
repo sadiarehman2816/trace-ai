@@ -65,3 +65,4 @@ Thumbs.db
 # ui/ tests/ and app.py remain tracked.
 # Documentation (.md) and requirements.txt also remain tracked.
 # ============================================================
+.api_cache/

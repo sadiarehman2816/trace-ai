@@ -27,6 +27,10 @@ FEATURE_FLAGS = {
     "export_json": True,
     "export_docx": True,
     "export_xlsx": True,
+    "export_pdf": True,
+    "citation_checker": True,
+    "verify_urls": False,          # HEAD-checks plain URLs (adds latency)
+    "claim_verification": False,   # experimental claim spot-checks (off by default)
 
     # Evidence-quality features
     "evidence_quality_filter": True,   # reject metadata/fragment spans
