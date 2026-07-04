@@ -66,7 +66,7 @@ async def verify_claim(client: httpx.AsyncClient, sentence: str) -> ClaimResult:
         s2 = await semantic_scholar_client.search_title(client, query, rows=3)
     except Exception:
         s2 = []
-    evidence = oa + s2
+    evidence = (oa or []) + (s2 or [])
     result.evidence = evidence[:5]
     if len(evidence) >= 3:
         result.verdict = "Partially Supported"   # literature exists; agreement not established
