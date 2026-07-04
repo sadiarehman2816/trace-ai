@@ -211,7 +211,7 @@ if is_enabled("citation_checker") and st.session_state.get("result"):
         if not full_text:
             st.warning("Could not extract text for reference verification.")
         else:
-            from verification import verify_document, to_json, to_html
+            from verification import verify_document
             prog = st.progress(0.0, text="Verifying references against external sources…")
 
             def _update(done, total):
@@ -290,8 +290,9 @@ if is_enabled("citation_checker") and st.session_state.get("result"):
                 st.write(f"- *{c.sentence[:200]}…* → **{c.verdict}**")
 
         d1, d2 = st.columns(2)
-        d1.download_button("Download JSON report", to_json(report),
+        from verification import to_json as verification_to_json, to_html as verification_to_html
+        d1.download_button("Download JSON report", verification_to_json(report),
                            file_name="trace_ai_verification.json", mime="application/json")
         d2.download_button("Download HTML report (print-to-PDF)",
-                           to_html(report, "uploaded document"),
+                           verification_to_html(report, "uploaded document"),
                            file_name="trace_ai_verification.html", mime="text/html")
