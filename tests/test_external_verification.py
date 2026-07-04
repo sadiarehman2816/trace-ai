@@ -205,9 +205,12 @@ check("No spurious issues on clean match",
 fake = reference_normalizer.normalize(
     "Fictional, A. (2022). A completely invented study of nothing. Imaginary Journal, 9(9), 1-99.", 1)
 vr_bad = run_mocked(fake, good=False)
-check("No record anywhere → fabricated", vr_bad.verdict == "fabricated",
+check("No record anywhere → not_externally_verified", vr_bad.verdict == "not_externally_verified",
       f"got {vr_bad.verdict}")
-check("Fabricated recommendation is URGENT", "URGENT" in (vr_bad.recommendation or ""))
+check("Not-found recommendation makes no fabrication claim (URGENT absent, no positive assertion)",
+      "URGENT" not in (vr_bad.recommendation or "")
+      and "likely fabricated" not in (vr_bad.recommendation or "").lower()
+      and "is fabricated" not in (vr_bad.recommendation or "").lower())
 check("Rejected near-misses leak no field issues (gating)",
       "author_mismatch" not in vr_bad.issues and "wrong_year" not in vr_bad.issues,
       str(vr_bad.issues))
@@ -232,14 +235,16 @@ print("== Report ==")
 stats.reference_count = len(refs)
 report = verification_report.build_report(stats, [vr_good, vr_bad], cons, [])
 check("Quality scores in range",
-      0 <= report.overall_quality <= 100 and report.reference_quality == 50.0,
+      0 <= report.overall_quality <= 100 and report.reference_quality == 60.0,
       f"overall={report.overall_quality} ref={report.reference_quality}")
-check("URGENT recommendation first", report.recommendations[0].startswith("URGENT"))
+check("Not-found refs flagged first, neutral (no positive fabrication claim)",
+      "URGENT" not in report.recommendations[0]
+      and "are fake" not in report.recommendations[0].lower())
 js = verification_report.to_json(report)
 check("JSON export parses", '"overall_quality"' in js and len(js) > 500)
 html_out = verification_report.to_html(report, "test.pdf")
 check("HTML export self-contained", html_out.startswith("<!DOCTYPE html") and "TRACE-AI" in html_out)
-check("HTML shows fabricated colour-coded", "#cb2431" in html_out)
+check("HTML shows not-externally-verified colour-coded", "#c0562b" in html_out)
 
 # ---------------------------------------------------------------------------
 # 6. Chicago author-date + multi-author first-surname (general fixes)
@@ -296,6 +301,69 @@ check("Multi-author citations NOT false 'cited-not-listed'",
       str(c_cons.cited_not_listed))
 check("Correctly-cited multi-author refs NOT 'listed-not-cited'",
       len(c_cons.listed_not_cited) == 0, str(c_cons.listed_not_cited))
+
+print(f"\n{PASS} passed, {FAIL} failed")
+
+# ---------------------------------------------------------------------------
+# 7. Typographic apostrophe (U+2019) — the O'Neil contradiction bug
+# ---------------------------------------------------------------------------
+
+print("== Typographic apostrophe (O'Neil) ==")
+ONEIL_DOC = (
+    "Intro. Bias in algorithms (O\u2019Neil 2016). Also see Eubanks (2018).\n\n"
+    "References\n\n"
+    "17. Eubanks, V. (2018). Automating Inequality. New York: St. Martin\u2019s Press.\n"
+    "18. O\u2019Neil, C. (2016). Weapons of Math Destruction. New York: Crown Publishing.\n"
+)
+o_raw, o_intext, _ = reference_extractor.extract(ONEIL_DOC)
+o_refs = reference_normalizer.normalize_all(o_raw)
+check("Typographic apostrophe: O'Neil surname parsed correctly (not 'Neil')",
+      any(r.authors and r.authors[0].startswith("O'Neil") for r in o_refs),
+      str([r.authors for r in o_refs]))
+o_cons = citation_matcher.check_consistency(o_refs, o_intext)
+check("O'Neil NOT falsely 'cited but not listed'",
+      not any("Neil" in x for x in o_cons.cited_not_listed), str(o_cons.cited_not_listed))
+check("O'Neil NOT falsely 'listed but never cited' (no contradiction)",
+      len(o_cons.listed_not_cited) == 0, str(o_cons.listed_not_cited))
+
+print(f"\n{PASS} passed, {FAIL} failed")
+
+# ---------------------------------------------------------------------------
+# 8. Zone-based extraction: no phantom refs, no embedded running heads (#5, #52)
+# ---------------------------------------------------------------------------
+
+print("== Zone-based extraction provenance ==")
+
+# A running head sitting BETWEEN two references (a page break in the PDF) must
+# never be extracted as a reference.
+EMBEDDED_HEAD_DOC = (
+    "Body cites Smith (2020) and Jones (2019).\n\n"
+    "References\n\n"
+    "Smith, J. (2020). First real reference. Journal A, 1(1), 1-10.\n"
+    "1542 THE AMERICAN ECONOMIC REVIEW JUNE 2018\n"
+    "Jones, K. (2019). Second real reference. Journal B, 2(2), 11-20.\n"
+)
+e_raw, _, _ = reference_extractor.extract(EMBEDDED_HEAD_DOC)
+check("Embedded running head not extracted as reference",
+      not any("AMERICAN ECONOMIC REVIEW" in r for r in e_raw), str(e_raw))
+check("Both real references still extracted", len(e_raw) == 2, f"got {len(e_raw)}: {e_raw}")
+
+# A citation-looking line that lives in the BODY (not the references section)
+# must not become a bibliography entry (phantom-reference guard, #5).
+PHANTOM_DOC = (
+    "In the body we mention Jorna and Wagenaar (2019) in passing, but it is "
+    "not in our bibliography at all.\n\n"
+    "References\n\n"
+    "Smith, J. (2020). The only listed work. Journal A, 1(1), 1-10.\n"
+)
+p_raw, p_intext, _ = reference_extractor.extract(PHANTOM_DOC)
+check("Body-only citation never becomes a bibliography entry",
+      not any("Jorna" in r for r in p_raw), str(p_raw))
+check("Only the genuinely listed reference is extracted",
+      len(p_raw) == 1 and "Smith" in p_raw[0], str(p_raw))
+check("Body-only mention is still seen as an in-text citation",
+      any(c.get("lead") == "jorna" for c in p_intext if c.get("style") == "author_year"),
+      str([c.get("lead") for c in p_intext]))
 
 print(f"\n{PASS} passed, {FAIL} failed")
 sys.exit(1 if FAIL else 0)

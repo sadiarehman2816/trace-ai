@@ -252,11 +252,52 @@ def document_stats(text: str, pages: int = 0) -> DocumentStats:
 # Combined entry point
 # ---------------------------------------------------------------------------
 
+# Typographic characters common in PDFs, folded to ASCII so every downstream
+# stage (segmentation, author parsing, matching) sees one consistent form.
+# Fixes e.g. "O’Neil" (U+2019) parsing to surname "Neil".
+_TYPOGRAPHIC = {
+    "\u2019": "'", "\u2018": "'", "\u02bc": "'",
+    "\u201c": '"', "\u201d": '"',
+    "\u2013": "-", "\u2014": "-", "\u2212": "-",
+    "\u00a0": " ", "\u2009": " ", "\u200a": " ", "\ufeff": "",
+}
+_TYPO_RE = re.compile("|".join(map(re.escape, _TYPOGRAPHIC)))
+
+
+def normalize_typography(text: str) -> str:
+    return _TYPO_RE.sub(lambda m: _TYPOGRAPHIC[m.group(0)], text)
+
+
 def extract(text: str, pages: int = 0) -> tuple[list[str], list[dict], DocumentStats]:
-    """Return (raw reference entries, in-text citations, doc stats)."""
-    bib = locate_bibliography(text)
-    refs = segment_references(bib) if bib else []
-    body = text[: text.rfind(bib)] if bib and text.rfind(bib) > 0 else text
+    """Return (raw reference entries, in-text citations, doc stats).
+
+    References come from the deterministic zone detector's ``references`` zone
+    (single source of truth), which structurally excludes running heads,
+    metadata and body text from the bibliography. If the zone detector finds
+    no references zone (unusual formatting), we fall back to the legacy
+    heading-based locator so behaviour never degrades.
+    """
+    text = normalize_typography(text)
+
+    from . import zone_detector as zd
+    zoned = zd.detect_zones(text)
+    ref_block = zd.zone_text(zoned, "references").strip()
+    # In-text citations must never be read from the references zone, otherwise
+    # bibliography entries masquerade as citations. Use body only.
+    body = zd.zone_text(zoned, "body")
+
+    if ref_block:
+        refs = segment_references(ref_block)
+    else:
+        # Fallback: legacy locator (keeps older/odd layouts working).
+        bib = locate_bibliography(text)
+        refs = segment_references(bib) if bib else []
+        if not body:
+            body = text[: text.rfind(bib)] if bib and text.rfind(bib) > 0 else text
+
+    if not body:                     # ensure in-text extraction always has something
+        body = text
+
     cites = extract_intext_citations(body)
     stats = document_stats(text, pages)
     stats.reference_count = len(refs)

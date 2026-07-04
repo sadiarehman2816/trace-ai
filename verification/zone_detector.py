@@ -196,6 +196,17 @@ def detect_zones(text: str, pages: Optional[list[dict]] = None) -> list[ZonedLin
         if in_references and "references" in zones_present and "metadata" in zones_present:
             candidates = [c for c in candidates if c[0] != "metadata"]
 
+        # Narrow override: a running head or bare page number embedded mid-
+        # bibliography (page break) is structurally header_footer, not a
+        # reference. Real bibliography entries are never all-caps-only nor a
+        # bare page number, so this cannot swallow a genuine reference.
+        if in_references and "references" in zones_present and "header_footer" in zones_present:
+            hf = next(c for c in candidates if c[0] == "header_footer")
+            strong_hf = any(s in ("regex:page_number", "heuristic:allcaps_short",
+                                  "pos:repeat") for s in hf[2])
+            if strong_hf:
+                candidates = [c for c in candidates if c[0] != "references"]
+
         # Pick highest-precedence zone; merge its signals; bump/penalise confidence.
         best = min(candidates, key=lambda c: _PRECEDENCE[c[0]])
         zone, conf, signals = best
