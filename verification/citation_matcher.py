@@ -41,11 +41,12 @@ def check_consistency(
 ) -> ConsistencyReport:
     report = ConsistencyReport()
 
+    # Index references by FIRST-author surname -> set of (base) years present.
     ref_surnames_years: dict[str, set[str]] = {}
     for ref in refs:
-        for author in ref.authors[:1]:            # first author anchors author-year style
-            s = _surname(author)
-            if s and ref.year:
+        if ref.authors and ref.year:
+            s = _surname(ref.authors[0])
+            if s:
                 ref_surnames_years.setdefault(s, set()).add(str(ref.year))
 
     cited_ref_indices: set[int] = set()
@@ -56,22 +57,27 @@ def check_consistency(
             cited_numbers.add(cite["number"])
             continue
 
-        author = cite.get("author", "")
+        # 'lead' is the first-author surname from the extractor; re-normalise it
+        # the same way reference surnames are normalised (strip accents/hyphens)
+        # so both sides compare identically.
+        lead = _norm(cite.get("lead") or "")
+        if not lead:
+            lead = _surname(re.split(r"\s+(?:and|&|et)\s+", cite.get("author", ""))[0])
         year = _base_year(cite.get("year", ""))
-        lead = _surname(re.split(r"\s+(?:and|&|et)\s+", author)[0]) if author else ""
         if not lead:
             continue
 
         if lead not in ref_surnames_years:
-            report.cited_not_listed.append(f"{author} ({cite.get('year')})")
+            report.cited_not_listed.append(f"{cite.get('author', lead)} ({cite.get('year')})")
             continue
 
         years = ref_surnames_years[lead]
-        if year not in years:
+        if year and year not in years:
             report.year_mismatches.append(
-                f"{author} cited for {cite.get('year')} but bibliography only has {', '.join(sorted(years))}"
+                f"{cite.get('author', lead)} cited for {cite.get('year')} "
+                f"but bibliography only has {', '.join(sorted(years))}"
             )
-        # Mark matching refs as cited
+        # Mark matching refs as cited (first-author surname + year).
         for ref in refs:
             if ref.authors and _surname(ref.authors[0]) == lead and (
                 not year or str(ref.year) == year

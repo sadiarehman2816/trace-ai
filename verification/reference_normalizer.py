@@ -22,7 +22,8 @@ _YEAR = re.compile(r"\(((?:19|20)\d{2})[a-z]?\)|\b((?:19|20)\d{2})[a-z]?\b")
 _REF_NUMBER = re.compile(r"^\s*(?:\[(\d{1,3})\]|(\d{1,3})\.)\s+")
 _VOL_ISSUE_PAGES = re.compile(r"\b(\d{1,4})\s*\((\d{1,4})\)\s*,?\s*(?:pp?\.\s*)?(\d+\s*[\-–]\s*\d+)")
 _PAGES_ONLY = re.compile(r"\b(?:pp?\.\s*)(\d+\s*[\-–]\s*\d+)")
-_AUTHOR_TOKEN = re.compile(r"([A-Z][a-zA-Z\-']+),\s*((?:[A-Z]\.\s*)+|[A-Z][a-z]+)")
+_U = r"A-Za-zÀ-ÖØ-öø-ÿ"
+_AUTHOR_TOKEN = re.compile(rf"([A-ZÀ-Ö][{_U}\-']+),\s*((?:[A-Z]\.\s*)+|[A-Z][{_U}]+)")
 
 _CONFERENCE_HINTS = re.compile(r"\b(proceedings|conference|symposium|workshop)\b", re.IGNORECASE)
 _BOOK_HINTS = re.compile(r"\b(press|publish|publications?|books?|edition|ed\.)\b", re.IGNORECASE)

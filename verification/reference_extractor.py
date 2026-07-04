@@ -24,10 +24,27 @@ _HEADING = re.compile(
 )
 _APPENDIX = re.compile(r"^\s*(appendix(\s+[A-Z0-9])?|annex(\s+[A-Z0-9])?)\b.*$", re.IGNORECASE | re.MULTILINE)
 
+# Unicode-aware name pieces (accents, hyphens, apostrophes: Rodríguez-Clare, O'Neil).
+_U = r"A-Za-zÀ-ÖØ-öø-ÿ"
+_NAME = rf"[A-ZÀ-Ö][{_U}'’\-]+"
+
 _YEAR = re.compile(r"\((?:19|20)\d{2}[a-z]?\)|\b(?:19|20)\d{2}[a-z]?\b")
 _NUMBERED_MARKER = re.compile(r"^\s*(?:\[(\d{1,3})\]|(\d{1,3})\.)\s+")
-_AUTHOR_SURNAME = re.compile(r"^\s*[A-Z][a-zA-Z\-']+,\s*(?:[A-Z]\.|[A-Z][a-z]+)")
-_ORG_START = re.compile(r"^\s*[A-Z][A-Za-z&,\.\-' ]{3,60}\.\s")
+# APA:     "Surname, F." / "Surname, First"
+# Chicago: "Surname, First. 1998." (year without parentheses, right after the name)
+_AUTHOR_SURNAME = re.compile(rf"^\s*{_NAME},\s*(?:[A-Z]\.|[A-Z][{_U}]+)")
+_CHICAGO_START = re.compile(rf"^\s*{_NAME},\s+[A-Z][{_U}.\- ]+?\.?\s+(?:18|19|20)\d{{2}}[a-z]?\.")
+_ORG_START = re.compile(rf"^\s*[A-ZÀ-Ö][{_U}&,\.\-' ]{{3,60}}\.\s")
+
+# Running-head / page-header noise: mostly UPPERCASE line, no lowercase title.
+# Real references are mixed-case; running heads look like
+# "1542 THE AMERICAN ECONOMIC REVIEW JUNE 2018".
+def _is_running_head(entry: str) -> bool:
+    letters = [c for c in entry if c.isalpha()]
+    if not letters:
+        return True
+    upper_ratio = sum(1 for c in letters if c.isupper()) / len(letters)
+    return upper_ratio > 0.6
 
 # Journal-tail guard: a continuation line like "Health Economics Review, 8(1), 21-30."
 # must not be treated as a new organisational-author reference start.
@@ -65,6 +82,9 @@ def _is_reference_start(line: str) -> bool:
         return False
     if _JOURNAL_TAIL.match(stripped):
         return False
+    # Chicago author-date: "Surname, First. 1998. ..." — a strong, unambiguous start.
+    if _CHICAGO_START.match(stripped):
+        return True
     if _AUTHOR_SURNAME.match(stripped) and _YEAR.search(stripped):
         return True
     if _ORG_START.match(stripped) and _YEAR.search(stripped):
@@ -113,53 +133,85 @@ def segment_references(block: str) -> list[str]:
         if current:
             entries.append(" ".join(current).strip())
 
-    # Drop obvious non-entries (page headers, stray numbers)
-    return [e for e in entries if len(e) >= 25 and _YEAR.search(e)]
+    # Drop obvious non-entries: too short, no year, or running-head/page-header noise.
+    return [
+        e for e in entries
+        if len(e) >= 25 and _YEAR.search(e) and not _is_running_head(e)
+    ]
 
 
 # ---------------------------------------------------------------------------
 # In-text citations
 # ---------------------------------------------------------------------------
 
-_PAREN_CITATION = re.compile(
-    r"\(([^()]{0,120}?(?:19|20)\d{2}[a-z]?[^()]{0,40})\)"
-)
-_NARRATIVE = re.compile(
-    r"\b([A-Z][a-zA-Z\-']+(?:\s+(?:and|&)\s+[A-Z][a-zA-Z\-']+)?(?:\s+et\s+al\.?)?)\s*\(((?:19|20)\d{2}[a-z]?)\)"
-)
+# An author group before a year: "Smith", "Smith and Jones", "Autor, Levy,
+# and Murnane", "Acemoglu et al." — connectors ordered longest-first so
+# ", and " is preferred over a bare ", ".
+_CONNECTOR = r"(?:,\s+and\s+|,\s+&\s+|\s+and\s+|\s+&\s+|,\s+)"
+_AUTHOR_GROUP = rf"{_NAME}(?:{_CONNECTOR}{_NAME})*(?:\s+et\s+al\.?)?"
+
+# Narrative: "Autor, Levy, and Murnane (2003)"
+_NARRATIVE = re.compile(rf"({_AUTHOR_GROUP})\s*\(((?:19|20)\d{{2}}[a-z]?)\)")
+# Parenthetical inner content carrying a year (Chicago "... 2012" or APA "..., 2012")
+_PAREN_CITATION = re.compile(r"\(([^()]{0,200}?(?:19|20)\d{2}[a-z]?[^()]{0,40})\)")
 _NUMERIC_CITATION = re.compile(r"\[(\d{1,3}(?:\s*[-–,]\s*\d{1,3})*)\]")
+
+_ET_AL = re.compile(r"\bet\s+al\.?", re.IGNORECASE)
+
+
+def first_surname(author_group: str) -> str:
+    """Return the normalised FIRST-author surname from an in-text author group.
+
+    'Autor, Levy, and Murnane' -> 'autor'
+    'Acemoglu, Gancia, and Zilibotti' -> 'acemoglu'
+    'Rodríguez-Clare' -> 'rodríguez-clare'  (hyphen kept — one surname)
+    'Smith & Jones' -> 'smith'
+    """
+    g = _ET_AL.sub("", author_group).strip(" ,.&")
+    # First chunk before the first connector.
+    first = re.split(_CONNECTOR, g, maxsplit=1)[0].strip()
+    # In-text groups use bare surnames; drop any stray given-initials.
+    first = re.sub(r"\b[A-Z]\.", "", first).strip(" ,.")
+    # Strip a possessive: "Roy's (1951)" -> "Roy".
+    first = re.sub(r"[’']s\b", "", first)
+    return first.lower()
 
 
 def extract_intext_citations(body_text: str) -> list[dict]:
-    """Return in-text citations: author-year (parenthetical + narrative) and
-    numbered ([1], [2-5], [1,3])."""
+    """Return in-text citations: author-year (narrative + parenthetical) and
+    numbered ([1], [2-5], [1,3]). The 'author' field always holds the FIRST
+    author's surname group; 'lead' holds its normalised surname for matching."""
     cites: list[dict] = []
     seen: set[tuple] = set()
 
+    def add_author_year(group: str, year: str, raw: str):
+        lead = first_surname(group)
+        if not lead:
+            return
+        base_year = re.sub(r"[a-z]$", "", year)
+        key = ("ay", lead, base_year)
+        if key in seen:
+            return
+        seen.add(key)
+        cites.append({
+            "style": "author_year", "author": group.strip(),
+            "lead": lead, "year": year, "raw": raw,
+        })
+
     for m in _NARRATIVE.finditer(body_text):
-        author, year = m.group(1), m.group(2)
-        key = ("ay", author.lower().replace("et al", "").strip(" ."), year)
-        if key not in seen:
-            seen.add(key)
-            cites.append({"style": "author_year", "author": author, "year": year, "raw": m.group(0)})
+        add_author_year(m.group(1), m.group(2), m.group(0))
 
     for m in _PAREN_CITATION.finditer(body_text):
         inner = m.group(1)
-        # Split multi-citation parentheses: (Smith, 2020; Jones, 2021)
-        for part in re.split(r";", inner):
+        for part in re.split(r";", inner):        # (Smith 2020; Jones 2021)
             ym = re.search(r"(?:19|20)\d{2}[a-z]?", part)
             if not ym:
                 continue
             author_part = part[: ym.start()].strip(" ,.&")
-            author_match = re.search(r"([A-Z][a-zA-Z\-']+(?:\s+(?:and|&)\s+[A-Z][a-zA-Z\-']+)?(?:\s+et\s+al\.?)?)\s*$", author_part)
-            if not author_match:
+            gm = re.search(rf"({_AUTHOR_GROUP})\s*$", author_part)
+            if not gm:
                 continue
-            author = author_match.group(1)
-            year = ym.group(0)
-            key = ("ay", author.lower().replace("et al", "").strip(" ."), year)
-            if key not in seen:
-                seen.add(key)
-                cites.append({"style": "author_year", "author": author, "year": year, "raw": part.strip()})
+            add_author_year(gm.group(1), ym.group(0), part.strip())
 
     for m in _NUMERIC_CITATION.finditer(body_text):
         for num in _expand_numeric(m.group(1)):

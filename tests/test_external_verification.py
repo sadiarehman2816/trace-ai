@@ -241,5 +241,61 @@ html_out = verification_report.to_html(report, "test.pdf")
 check("HTML export self-contained", html_out.startswith("<!DOCTYPE html") and "TRACE-AI" in html_out)
 check("HTML shows fabricated colour-coded", "#cb2431" in html_out)
 
+# ---------------------------------------------------------------------------
+# 6. Chicago author-date + multi-author first-surname (general fixes)
+# ---------------------------------------------------------------------------
+
+print("== Chicago author-date & multi-author ==")
+
+CHICAGO_DOC = """
+Body. As Autor, Levy, and Murnane (2003) showed, and later work
+(Acemoglu, Gancia, and Zilibotti 2012; Beaudry, Green, and Sand 2016)
+confirmed. See also Rodríguez-Clare (2010) and Roy's (1951) insight.
+
+1542 THE AMERICAN ECONOMIC REVIEW JUNE 2018
+
+References
+
+Acemoglu, Daron, Gino Gancia, and Fabrizio Zilibotti. 2012. "Competing Engines
+of Growth." Journal of Economic Theory 147 (2): 570-601.
+
+Autor, David H., Frank Levy, and Richard J. Murnane. 2003. "The Skill Content
+of Recent Technological Change." Quarterly Journal of Economics 118 (4): 1279.
+
+Beaudry, Paul, David A. Green, and Benjamin M. Sand. 2016. "The Great Reversal."
+Journal of Labor Economics 34 (S1): S199-S247.
+
+Rodríguez-Clare, Andrés. 2010. "Offshoring in a Ricardian World." American
+Economic Journal 2 (2): 227-258.
+
+Roy, A. D. 1951. "Some Thoughts on the Distribution of Earnings." Oxford
+Economic Papers 3 (2): 135-146.
+"""
+
+c_raw, c_intext, _ = reference_extractor.extract(CHICAGO_DOC)
+check("Chicago: 5 references segmented (no page-header noise)", len(c_raw) == 5, f"got {len(c_raw)}")
+check("Chicago: running-head '1542 THE AMERICAN...' dropped",
+      not any("AMERICAN ECONOMIC REVIEW" in r for r in c_raw))
+check("Chicago: Rodríguez-Clare NOT merged into previous ref",
+      any(r.startswith("Rodríguez-Clare") for r in c_raw))
+
+leads = {c.get("lead") for c in c_intext if c.get("style") == "author_year"}
+check("Multi-author: first surname 'autor' (not 'murnane')", "autor" in leads and "murnane" not in leads, str(leads))
+check("Multi-author: 'acemoglu' (not 'zilibotti')", "acemoglu" in leads and "zilibotti" not in leads, str(leads))
+check("Accented: 'rodríguez-clare' captured (not 'clare')",
+      any(l and l.replace("-", "").startswith("rodr") for l in leads) and "clare" not in leads, str(leads))
+check("Possessive: Roy's -> 'roy'", "roy" in leads, str(leads))
+
+c_refs = reference_normalizer.normalize_all(c_raw)
+check("Accented ref author parsed: Rodríguez-Clare",
+      any(r.authors and r.authors[0].lower().startswith("rodr") for r in c_refs))
+
+c_cons = citation_matcher.check_consistency(c_refs, c_intext)
+check("Multi-author citations NOT false 'cited-not-listed'",
+      not any("Murnane" in x or "Zilibotti" in x or "Sand" in x for x in c_cons.cited_not_listed),
+      str(c_cons.cited_not_listed))
+check("Correctly-cited multi-author refs NOT 'listed-not-cited'",
+      len(c_cons.listed_not_cited) == 0, str(c_cons.listed_not_cited))
+
 print(f"\n{PASS} passed, {FAIL} failed")
 sys.exit(1 if FAIL else 0)
